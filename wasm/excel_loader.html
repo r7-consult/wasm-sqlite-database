@@ -1,0 +1,1565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Loader WASM Test</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section h2 {
+            margin-top: 0;
+            color: #555;
+        }
+        .file-input {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+        .file-input:hover {
+            border-color: #007bff;
+        }
+        .file-input.dragover {
+            border-color: #007bff;
+            background: #f0f7ff;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        button.secondary {
+            background: #6c757d;
+        }
+        button.secondary:hover {
+            background: #545b62;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .status.loading {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status.ready {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .datasets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .dataset-chip {
+            background: #e9ecef;
+            padding: 5px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .dataset-chip:hover {
+            background: #007bff;
+            color: white;
+        }
+        .dataset-chip.active {
+            background: #007bff;
+            color: white;
+        }
+        textarea {
+            width: 100%;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 13px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        #sql-input {
+            height: 80px;
+        }
+        #results {
+            height: 300px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        #log {
+            height: 150px;
+            background: #f8f8f8;
+            color: #333;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 13px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+        tr:nth-child(even) {
+            background: #fafafa;
+        }
+        .table-container {
+            max-height: 400px;
+            overflow: auto;
+        }
+        .info {
+            color: #666;
+            font-size: 14px;
+        }
+        .test-results {
+            font-family: monospace;
+            font-size: 13px;
+        }
+        .test-pass {
+            color: #28a745;
+        }
+        .test-fail {
+            color: #dc3545;
+        }
+        .test-info {
+            color: #17a2b8;
+        }
+    </style>
+</head>
+<body>
+    <h1>Excel Loader WASM Test</h1>
+    <div id="build-info" class="info"></div>
+
+    <div class="section">
+        <h2>Module Status</h2>
+        <div id="module-status" class="status loading">Loading WASM module...</div>
+    </div>
+
+    <div class="section">
+        <h2>1. Load File</h2>
+        <div class="file-input" id="drop-zone">
+            <p>Drop a file here or click to select</p>
+            <p class="info">
+                Supported (WASM build): CSV, TSV, XLSX/XLSM/XLTX, XLS, XLSB,
+                SQLite (.db, .sqlite, .sqlite3), DBF, JSON/JSONL, XML, HTML, TXT.
+                <br>
+                Optional heavy formats (build-dependent, see ADR 0014):
+                ODS, MDB/ACCDB, Parquet, DuckDB.
+            </p>
+            <input type="file" id="file-input" multiple
+                   accept=".csv,.tsv,.tab,.xlsx,.xlsm,.xltx,.xls,.xlsb,.dbf,.db,.sqlite,.sqlite3,.json,.jsonl,.ndjson,.xml,.html,.htm,.txt,.log,.mdb,.accdb,.parquet,.pq,.duckdb">
+        </div>
+        <div id="file-info" style="margin-top: 10px;"></div>
+    </div>
+
+    <div class="section">
+        <h2>2. Datasets</h2>
+        <button id="btn-list-datasets" disabled>List Datasets</button>
+        <div id="datasets-list" class="datasets"></div>
+    </div>
+
+    <div class="section">
+        <h2>3. SQL Query</h2>
+        <textarea id="sql-input" placeholder="Enter SQL query, e.g.: SELECT * FROM &quot;Sheet1&quot; LIMIT 10"></textarea>
+        <div style="margin-top: 10px;">
+            <button id="btn-query" disabled>Execute Query</button>
+            <button id="btn-prev-page" class="secondary" disabled>Prev Page</button>
+            <button id="btn-next-page" class="secondary" disabled>Next Page</button>
+            <button id="btn-profile" class="secondary" disabled>Profile Dataset</button>
+            <button id="btn-quality" class="secondary" disabled>Run Quality Rules</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>4. Results</h2>
+        <div id="result-info" class="info"></div>
+        <div id="result-table" class="table-container"></div>
+        <h3>Raw JSON</h3>
+        <textarea id="results" readonly></textarea>
+    </div>
+
+    <div class="section">
+        <h2>5. Multi-File &amp; Memory</h2>
+        <div style="margin-bottom:10px;">
+            <button id="btn-attach-file" class="secondary" disabled>Attach File(s) to Workbook</button>
+            <input type="file" id="attach-file-input" multiple
+                   accept=".csv,.tsv,.tab,.xlsx,.xlsm,.xltx,.xls,.xlsb,.dbf,.db,.sqlite,.sqlite3,.json,.jsonl,.ndjson,.xml,.html,.htm,.txt,.log,.mdb,.accdb,.parquet,.pq,.duckdb"
+                   style="display:none">
+        </div>
+        <div style="margin-bottom:10px;">
+            <button id="btn-show-sources" class="secondary" disabled>Show Dataset Sources</button>
+            <button id="btn-show-paths" class="secondary" disabled>Show Source Paths</button>
+            <button id="btn-show-memory" class="secondary" disabled>Show Memory Stats</button>
+        </div>
+        <div style="margin-bottom:10px;">
+            <strong>Rename Dataset</strong><br>
+            From:
+            <input id="rename-old" placeholder="old_name" style="width:180px;">
+            To:
+            <input id="rename-new" placeholder="new_name" style="width:180px;">
+            <button id="btn-rename-dataset" class="secondary" disabled>Rename</button>
+        </div>
+        <div style="margin-bottom:10px;">
+            <strong>Detach Source</strong><br>
+            Source file path/name:
+            <input id="detach-path" placeholder="data/customers.csv" style="width:260px;">
+            <button id="btn-detach-source" class="secondary" disabled>Detach</button>
+        </div>
+        <div style="margin-bottom:10px;">
+            <button id="btn-run-multi-tests" class="secondary" disabled>Run Multi-File API Test</button>
+        </div>
+        <pre id="multi-info" class="info" style="max-height:220px; overflow:auto; background:#f8f8f8;"></pre>
+    </div>
+
+    <div class="section">
+        <h2>8. Project Manifests (ADR 0019)</h2>
+        <p class="info">
+            Use a JSON project manifest (e.g. <code>project.json</code>) to describe
+            a multi-file workbook, then select the folder containing the files to
+            open everything in one step.
+        </p>
+        <div style="margin-bottom:10px;">
+            <strong>Manifest JSON</strong><br>
+            <input type="file" id="project-manifest-input" accept=".json">
+        </div>
+        <div style="margin-bottom:10px;">
+            <strong>Project Folder</strong><br>
+            <input type="file" id="project-folder-input" webkitdirectory multiple>
+        </div>
+        <div style="margin-bottom:10px;">
+            <button id="btn-open-project" class="secondary" disabled>Open Project from Manifest</button>
+        </div>
+        <pre id="project-info" class="info" style="max-height:220px; overflow:auto; background:#f8f8f8;"></pre>
+    </div>
+
+    <div class="section">
+        <h2>6. Run Automated Tests</h2>
+        <button id="btn-run-tests">Run All Tests</button>
+        <div id="test-results" class="test-results" style="margin-top: 10px;"></div>
+    </div>
+
+    <div class="section">
+        <h2>7. Vector DB (sqlite-vec)</h2>
+        <p class="info">
+            Simple test harness for the sqlite-vec service (ADR 0016).
+            Uses a persistent SQLite database at <code>/db/vec.db</code>.
+        </p>
+        <div style="margin-bottom:10px;">
+            <strong>Create table</strong><br>
+            Table: <input id="vec-table-name" value="vec_examples" style="width:140px;">
+            Dims: <input id="vec-dims" value="8" style="width:60px;">
+            Storage:
+            <select id="vec-storage">
+                <option value="float">float</option>
+                <option value="int8">int8</option>
+                <option value="binary">binary</option>
+            </select>
+            <button id="vec-btn-create" class="secondary">Create Vec Table</button>
+        </div>
+        <div style="margin-bottom:10px;">
+            <strong>Insert vector</strong><br>
+            ID: <input id="vec-insert-id" value="1" style="width:80px;">
+            Embedding JSON:
+            <input id="vec-insert-embedding" style="width:400px;"
+                   value="[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8]">
+            Meta JSON (optional):
+            <input id="vec-insert-meta" style="width:300px;"
+                   placeholder='{"label":"example"}'>
+            <button id="vec-btn-insert" class="secondary">Insert</button>
+        </div>
+        <div style="margin-bottom:10px;">
+            <strong>Search</strong><br>
+            Embedding JSON:
+            <input id="vec-search-embedding" style="width:400px;"
+                   value="[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8]">
+            k:
+            <input id="vec-search-k" value="3" style="width:60px;">
+            <button id="vec-btn-search" class="secondary">Search</button>
+        </div>
+        <pre id="vec-results" style="background:#f8f8f8; padding:10px; max-height:200px; overflow:auto;"></pre>
+    </div>
+
+    <div class="section">
+        <h2>Log</h2>
+        <textarea id="log" readonly></textarea>
+    </div>
+
+    <!-- Configure Emscripten Module to mount IDBFS at /db before the WASM
+         runtime starts, so that SQLite databases and the vec service can
+         persist data in IndexedDB. -->
+    <script>
+        // Configure the Emscripten Module to mount an IDBFS-backed directory
+        // at /db so that SQLite databases (including vec.db) can persist in
+        // browser IndexedDB across sessions. We try both the historical
+        // global IDBFS symbol and the newer FS.filesystems.IDBFS hook.
+        var Module = {
+            preRun: [
+                function () {
+                    try {
+                        FS.mkdir('/db');
+                    } catch (e) {
+                        // ignore if already exists
+                    }
+                    try {
+                        if (typeof IDBFS !== 'undefined') {
+                            FS.mount(IDBFS, {}, '/db');
+                        } else if (FS.filesystems && FS.filesystems.IDBFS) {
+                            FS.mount(FS.filesystems.IDBFS, {}, '/db');
+                        } else {
+                            console.warn('IDBFS filesystem not available; /db will not persist');
+                        }
+                    } catch (e) {
+                        console.error('Failed to mount IDBFS at /db', e);
+                    }
+                }
+            ],
+            postRun: [
+                function () {
+                    try {
+                        FS.syncfs(true, function (err) {
+                            if (err) {
+                                console.error('IDBFS sync (load) failed', err);
+                            }
+                        });
+                    } catch (e) {
+                        console.error('IDBFS sync postRun failed', e);
+                    }
+                }
+            ]
+        };
+    </script>
+    <!-- Load the Emscripten-generated WASM module and JS wrapper.
+         When using the build output, ensure this HTML file and
+         excel_loader_wasm.js / excel_loader.js live in the same directory
+         (e.g. build_wasm/). -->
+    <script src="excel_loader_wasm.js"></script>
+    <script src="excel_loader.js"></script>
+    <script src="session_manager.js"></script>
+    <script src="vec_service.js"></script>
+    <script>
+        // Global state
+        let loader = null;
+        let workbook = null;
+        let currentDataset = null;
+
+        // DOM elements
+        const moduleStatus = document.getElementById('module-status');
+        const buildInfo = document.getElementById('build-info');
+        const fileInput = document.getElementById('file-input');
+        const dropZone = document.getElementById('drop-zone');
+        const fileInfo = document.getElementById('file-info');
+        const datasetsDiv = document.getElementById('datasets-list');
+        const sqlInput = document.getElementById('sql-input');
+        const resultsArea = document.getElementById('results');
+        const resultInfo = document.getElementById('result-info');
+        const resultTable = document.getElementById('result-table');
+        const logArea = document.getElementById('log');
+        const testResults = document.getElementById('test-results');
+        const multiInfo = document.getElementById('multi-info');
+
+        const btnListDatasets = document.getElementById('btn-list-datasets');
+        const btnQuery = document.getElementById('btn-query');
+        const btnPrevPage = document.getElementById('btn-prev-page');
+        const btnNextPage = document.getElementById('btn-next-page');
+        const btnProfile = document.getElementById('btn-profile');
+        const btnQuality = document.getElementById('btn-quality');
+        const btnRunTests = document.getElementById('btn-run-tests');
+
+        // Multi-file & memory controls
+        const btnAttachFile = document.getElementById('btn-attach-file');
+        const attachFileInput = document.getElementById('attach-file-input');
+        const btnShowSources = document.getElementById('btn-show-sources');
+        const btnShowPaths = document.getElementById('btn-show-paths');
+        const btnShowMemory = document.getElementById('btn-show-memory');
+        const renameOldInput = document.getElementById('rename-old');
+        const renameNewInput = document.getElementById('rename-new');
+        const btnRenameDataset = document.getElementById('btn-rename-dataset');
+        const detachPathInput = document.getElementById('detach-path');
+        const btnDetachSource = document.getElementById('btn-detach-source');
+        const btnRunMultiTests = document.getElementById('btn-run-multi-tests');
+
+        // Project manifest controls (ADR 0019)
+        const projectManifestInput = document.getElementById('project-manifest-input');
+        const projectFolderInput = document.getElementById('project-folder-input');
+        const btnOpenProject = document.getElementById('btn-open-project');
+        const projectInfo = document.getElementById('project-info');
+
+        let currentProjectManifest = null;
+        let currentProjectFiles = null;
+
+        // Vector DB controls
+        const vecTableNameInput = document.getElementById('vec-table-name');
+        const vecDimsInput = document.getElementById('vec-dims');
+        const vecStorageSelect = document.getElementById('vec-storage');
+        const vecInsertIdInput = document.getElementById('vec-insert-id');
+        const vecInsertEmbeddingInput = document.getElementById('vec-insert-embedding');
+        const vecInsertMetaInput = document.getElementById('vec-insert-meta');
+        const vecSearchEmbeddingInput = document.getElementById('vec-search-embedding');
+        const vecSearchKInput = document.getElementById('vec-search-k');
+        const vecBtnCreate = document.getElementById('vec-btn-create');
+        const vecBtnInsert = document.getElementById('vec-btn-insert');
+        const vecBtnSearch = document.getElementById('vec-btn-search');
+        const vecResults = document.getElementById('vec-results');
+
+        // Simple paging support (ADR 0017): default 2000-row pages
+        const PAGE_SIZE = 2000;
+        let currentBaseSql = '';
+        let currentPageIndex = 0;
+        let isPagedQuery = false;
+
+        // Logging
+        function log(msg) {
+            const time = new Date().toLocaleTimeString();
+            logArea.value += `[${time}] ${msg}\n`;
+            logArea.scrollTop = logArea.scrollHeight;
+            console.log(msg);
+        }
+
+        // Update status
+        function setStatus(status, message) {
+            moduleStatus.className = `status ${status}`;
+            moduleStatus.textContent = message;
+        }
+
+        // Enable/disable buttons
+        function setButtonsEnabled(enabled) {
+            btnListDatasets.disabled = !enabled;
+            btnQuery.disabled = !enabled;
+            btnPrevPage.disabled = !enabled;
+            btnNextPage.disabled = !enabled;
+            btnProfile.disabled = !enabled;
+            btnQuality.disabled = !enabled;
+            btnAttachFile.disabled = !enabled;
+            btnShowSources.disabled = !enabled;
+            btnShowPaths.disabled = !enabled;
+            btnShowMemory.disabled = !enabled;
+            btnRenameDataset.disabled = !enabled;
+            btnDetachSource.disabled = !enabled;
+            btnRunMultiTests.disabled = !enabled;
+            btnOpenProject.disabled = !enabled || !currentProjectManifest || !currentProjectFiles;
+        }
+
+        // Display results as table
+        function displayTable(columns, rows) {
+            if (!columns || columns.length === 0) {
+                resultTable.innerHTML = '<p class="info">No data</p>';
+                return;
+            }
+
+            let html = '<table><thead><tr>';
+            columns.forEach(col => {
+                html += `<th>${escapeHtml(col)}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            rows.forEach(row => {
+                html += '<tr>';
+                row.forEach(cell => {
+                    html += `<td>${escapeHtml(String(cell ?? ''))}</td>`;
+                });
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            resultTable.innerHTML = html;
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;')
+                      .replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;')
+                      .replace(/"/g, '&quot;');
+        }
+
+        const APP_VERSION = '1.0.0';
+
+        // Initialize WASM module
+        async function initModule() {
+            try {
+                log('Loading WASM module...');
+
+                // The WASM module should be loaded via script tag
+                // Check if Module is available
+                if (typeof Module === 'undefined') {
+                    throw new Error('WASM Module not loaded. Make sure excel_loader_wasm.js is included.');
+                }
+
+                // Wait for module to be ready
+                if (Module.ready) {
+                    await Module.ready;
+                } else if (!Module.calledRun) {
+                    await new Promise(resolve => {
+                        Module.onRuntimeInitialized = resolve;
+                    });
+                }
+
+                loader = ExcelLoaderModule.create(Module);
+
+                // Initialize VecService on the same Module if available.
+                if (typeof VecService !== 'undefined') {
+                    try {
+                        window.vecService = new VecService(Module);
+                        window.vecService.init();
+                        if (window.vecService.isAvailable && window.vecService.isAvailable()) {
+                            log('VecService initialised (sqlite-vec available)');
+                        }
+                    } catch (e) {
+                        log(`VecService init failed: ${e.message}`);
+                    }
+                }
+
+                setStatus('ready', 'WASM module loaded and ready');
+                log('WASM module initialized successfully');
+            } catch (err) {
+                setStatus('error', `Failed to load WASM: ${err.message}`);
+                log(`ERROR: ${err.message}`);
+            }
+        }
+
+        // Wire up UI events
+        document.addEventListener('DOMContentLoaded', () => {
+            btnQuery.addEventListener('click', () => executeQuery());
+            btnPrevPage.addEventListener('click', () => executePagedQuery(-1));
+            btnNextPage.addEventListener('click', () => executePagedQuery(1));
+            btnListDatasets.addEventListener('click', () => listDatasets());
+            btnRunTests.addEventListener('click', () => runTests());
+
+            // Vector DB UI
+            vecBtnCreate.addEventListener('click', () => vecCreateTable());
+            vecBtnInsert.addEventListener('click', () => vecInsert());
+            vecBtnSearch.addEventListener('click', () => vecSearch());
+        });
+
+        // Handle file selection
+        async function handleFile(file) {
+            if (!loader) {
+                log('ERROR: Module not loaded');
+                return;
+            }
+
+            try {
+                log(`Opening file: ${file.name} (${file.size} bytes)`);
+
+                // Warn for formats that require heavy-format support. They may
+                // still be rejected at runtime if this WASM build was compiled
+                // without EXCEL_LOADER_WASM_HEAVY_FORMATS enabled.
+                const lowerName = file.name.toLowerCase();
+                if (lowerName.endsWith('.mdb') ||
+                    lowerName.endsWith('.accdb') ||
+                    lowerName.endsWith('.parquet') ||
+                    lowerName.endsWith('.pq') ||
+                    lowerName.endsWith('.duckdb')) {
+                    log('Note: MDB/ACCDB, Parquet, and DuckDB require heavy-format support; this build may still report them as "not supported in this build".');
+                }
+
+                if (workbook) {
+                    workbook.close();
+                    workbook = null;
+                }
+
+                workbook = await loader.openFileAsync(file);
+                fileInfo.innerHTML = `<strong>Loaded:</strong> ${file.name} (${file.size} bytes)`;
+                setButtonsEnabled(true);
+                log(`File opened successfully`);
+
+                // Auto-list datasets
+                listDatasets();
+            } catch (err) {
+                log(`ERROR opening file: ${err.message}`);
+                fileInfo.innerHTML = `<span style="color:red">Error: ${err.message}</span>`;
+            }
+        }
+
+        async function handleFiles(fileList) {
+            if (!fileList || fileList.length === 0) {
+                return;
+            }
+            // First file becomes the primary workbook.
+            await handleFile(fileList[0]);
+            // Any additional files are attached to the same workbook.
+            for (let i = 1; i < fileList.length; ++i) {
+                await attachFileToWorkbook(fileList[i]);
+            }
+            if (fileList.length > 1) {
+                const extra = fileList.length - 1;
+                multiInfo.textContent = `Attached ${extra} additional file(s) to the current workbook.`;
+            }
+        }
+
+        // List datasets
+        function listDatasets() {
+            if (!workbook) return;
+
+            try {
+                const result = workbook.listDatasets();
+                log(`Listed datasets: ${JSON.stringify(result)}`);
+
+                datasetsDiv.innerHTML = '';
+                const sheets = result.sheets || [];
+
+                if (sheets.length === 0) {
+                    datasetsDiv.innerHTML = '<span class="info">No datasets found</span>';
+                    return;
+                }
+
+                sheets.forEach(sheet => {
+                    const chip = document.createElement('span');
+                    chip.className = 'dataset-chip';
+                    chip.textContent = sheet.name;
+                    chip.onclick = () => selectDataset(sheet.name);
+                    datasetsDiv.appendChild(chip);
+                });
+
+                // Auto-select first dataset
+                if (sheets.length > 0) {
+                    selectDataset(sheets[0].name);
+                }
+            } catch (err) {
+                log(`ERROR listing datasets: ${err.message}`);
+            }
+        }
+
+        // Vector DB helpers (sqlite-vec service)
+        function vecEnsureService() {
+            if (!window.vecService) {
+                log('VecService is not available; ensure sqlite-vec is built and vec_service.js is loaded.');
+                return false;
+            }
+            return true;
+        }
+
+        function vecCreateTable() {
+            if (!vecEnsureService()) return;
+            try {
+                const name = vecTableNameInput.value.trim() || 'vec_examples';
+                const dims = parseInt(vecDimsInput.value, 10) || 8;
+                const storage = vecStorageSelect.value || 'float';
+                window.vecService.createTable(name, dims, storage);
+                vecResults.textContent = `Created table "${name}" with ${dims} dims (${storage}).`;
+                log(`VecService: created table ${name}`);
+            } catch (e) {
+                const err = window.vecService.getLastError();
+                vecResults.textContent = `Create table failed: ${e.message}\n${err || ''}`;
+                log(`VecService createTable error: ${e.message}`);
+            }
+        }
+
+        function vecInsert() {
+            if (!vecEnsureService()) return;
+            try {
+                const name = vecTableNameInput.value.trim() || 'vec_examples';
+                const id = parseInt(vecInsertIdInput.value, 10) || 1;
+                const embeddingText = vecInsertEmbeddingInput.value.trim();
+                const metaText = vecInsertMetaInput.value.trim();
+
+                const embedding = embeddingText ? JSON.parse(embeddingText) : [];
+                const meta = metaText ? JSON.parse(metaText) : null;
+
+                window.vecService.insert(name, id, embedding, meta);
+                vecResults.textContent = `Inserted id=${id} into "${name}".`;
+                log(`VecService: inserted id=${id} into ${name}`);
+            } catch (e) {
+                const err = window.vecService.getLastError();
+                vecResults.textContent = `Insert failed: ${e.message}\n${err || ''}`;
+                log(`VecService insert error: ${e.message}`);
+            }
+        }
+
+        function vecSearch() {
+            if (!vecEnsureService()) return;
+            try {
+                const name = vecTableNameInput.value.trim() || 'vec_examples';
+                const embeddingText = vecSearchEmbeddingInput.value.trim();
+                const k = parseInt(vecSearchKInput.value, 10) || 3;
+                const embedding = embeddingText ? JSON.parse(embeddingText) : [];
+
+                const result = window.vecService.search(name, embedding, k);
+                vecResults.textContent = JSON.stringify(result, null, 2);
+                log(`VecService: search returned ${result.rows ? result.rows.length : 0} rows`);
+            } catch (e) {
+                const err = window.vecService.getLastError();
+                vecResults.textContent = `Search failed: ${e.message}\n${err || ''}`;
+                log(`VecService search error: ${e.message}`);
+            }
+        }
+
+        // Select a dataset
+        function selectDataset(name) {
+            currentDataset = name;
+
+            // Update chips
+            document.querySelectorAll('.dataset-chip').forEach(chip => {
+                chip.classList.toggle('active', chip.textContent === name);
+            });
+
+            // Set default SQL
+            sqlInput.value = `SELECT * FROM "${name}" LIMIT 100`;
+            log(`Selected dataset: ${name}`);
+        }
+
+        async function attachFileToWorkbook(file) {
+            if (!loader || !workbook) {
+                log('No workbook is currently open; attach is ignored.');
+                return;
+            }
+            try {
+                const fileName = file.name || 'attached';
+                const arrayBuffer = await file.arrayBuffer();
+                const data = new Uint8Array(arrayBuffer);
+
+                // Allocate buffer in WASM memory
+                const dataPtr = Module._malloc(data.length);
+                const heap = new Uint8Array(Module.HEAPU8.buffer, dataPtr, data.length);
+                heap.set(data);
+
+                // Allocate filename string
+                const namePtr = loader._allocateString(fileName);
+
+                const rc = Module._ff_attachFile(
+                    workbook.handleId,
+                    dataPtr,
+                    data.length,
+                    namePtr,
+                    ExcelLoaderModule.FileFormat.Auto,
+                    ','.charCodeAt(0),
+                    1
+                );
+
+                Module._free(dataPtr);
+                Module._free(namePtr);
+
+                if (rc !== 0) {
+                    const err = loader.getLastError();
+                    log(`ERROR attaching file "${fileName}": ${err || 'unknown error'}`);
+                    multiInfo.textContent = `Attach failed: ${err || 'unknown error'}`;
+                } else {
+                    log(`Attached file "${fileName}" to current workbook`);
+                    multiInfo.textContent = `Attached file "${fileName}".`;
+                    listDatasets();
+                }
+            } catch (e) {
+                log(`ERROR attaching file: ${e.message}`);
+                multiInfo.textContent = `Attach failed: ${e.message}`;
+            }
+        }
+
+        function showDatasetSources() {
+            if (!loader || !workbook) {
+                multiInfo.textContent = 'No workbook is currently open.';
+                return;
+            }
+            try {
+                const ptr = Module._ff_listDatasetSources(workbook.handleId);
+                const json = Module.UTF8ToString(ptr);
+                multiInfo.textContent = json || '{}';
+                log('Listed dataset sources');
+            } catch (e) {
+                log(`ERROR listing dataset sources: ${e.message}`);
+                multiInfo.textContent = `Error listing dataset sources: ${e.message}`;
+            }
+        }
+
+        function showMemoryStats() {
+            if (!loader || !workbook) {
+                multiInfo.textContent = 'No workbook is currently open.';
+                return;
+            }
+            try {
+                const ptr = Module._ff_getWorkbookMemoryStats(workbook.handleId);
+                const json = Module.UTF8ToString(ptr);
+                multiInfo.textContent = json || '{}';
+                log('Fetched workbook memory stats');
+            } catch (e) {
+                log(`ERROR fetching memory stats: ${e.message}`);
+                multiInfo.textContent = `Error fetching memory stats: ${e.message}`;
+            }
+        }
+
+        function showSourcePaths() {
+            if (!loader || !workbook) {
+                multiInfo.textContent = 'No workbook is currently open.';
+                return;
+            }
+            try {
+                const ptr = Module._ff_getWorkbookSourcePaths(workbook.handleId);
+                const json = Module.UTF8ToString(ptr);
+                multiInfo.textContent = json || '{}';
+                log('Fetched workbook source paths');
+            } catch (e) {
+                log(`ERROR fetching source paths: ${e.message}`);
+                multiInfo.textContent = `Error fetching source paths: ${e.message}`;
+            }
+        }
+
+        function showDatasetMemoryStats() {
+            if (!loader || !workbook) {
+                multiInfo.textContent = 'No workbook is currently open.';
+                return;
+            }
+            try {
+                const ptr = Module._ff_listDatasetMemoryStats(workbook.handleId);
+                const json = Module.UTF8ToString(ptr);
+                multiInfo.textContent = json || '{}';
+                log('Fetched dataset memory stats');
+            } catch (e) {
+                log(`ERROR fetching dataset memory stats: ${e.message}`);
+                multiInfo.textContent = `Error fetching dataset memory stats: ${e.message}`;
+            }
+        }
+
+        function renameDataset() {
+            if (!loader || !workbook) {
+                multiInfo.textContent = 'No workbook is currently open.';
+                return;
+            }
+            const oldName = renameOldInput.value.trim();
+            const newName = renameNewInput.value.trim();
+            if (!oldName || !newName) {
+                multiInfo.textContent = 'Please enter both old and new dataset names.';
+                return;
+            }
+            try {
+                const oldPtr = loader._allocateString(oldName);
+                const newPtr = loader._allocateString(newName);
+                const rc = Module._ff_renameDataset(workbook.handleId, oldPtr, newPtr);
+                Module._free(oldPtr);
+                Module._free(newPtr);
+                if (rc !== 0) {
+                    const err = loader.getLastError();
+                    multiInfo.textContent = `Rename failed: ${err || 'unknown error'}`;
+                    log(`ERROR renaming dataset: ${err || 'unknown error'}`);
+                } else {
+                    multiInfo.textContent = `Renamed dataset "${oldName}" to "${newName}".`;
+                    log(`Renamed dataset "${oldName}" to "${newName}"`);
+                    listDatasets();
+                }
+            } catch (e) {
+                multiInfo.textContent = `Rename failed: ${e.message}`;
+                log(`ERROR renaming dataset: ${e.message}`);
+            }
+        }
+
+        function detachSource() {
+            if (!loader || !workbook) {
+                multiInfo.textContent = 'No workbook is currently open.';
+                return;
+            }
+            const path = detachPathInput.value.trim();
+            if (!path) {
+                multiInfo.textContent = 'Please enter a source file path/name.';
+                return;
+            }
+            try {
+                const pathPtr = loader._allocateString(path);
+                const rc = Module._ff_detachSource(workbook.handleId, pathPtr);
+                Module._free(pathPtr);
+                if (rc !== 0) {
+                    const err = loader.getLastError();
+                    multiInfo.textContent = `Detach failed: ${err || 'unknown error'}`;
+                    log(`ERROR detaching source: ${err || 'unknown error'}`);
+                } else {
+                    multiInfo.textContent = `Detached source "${path}".`;
+                    log(`Detached source "${path}"`);
+                    listDatasets();
+                }
+            } catch (e) {
+                multiInfo.textContent = `Detach failed: ${e.message}`;
+                log(`ERROR detaching source: ${e.message}`);
+            }
+        }
+
+        async function runMultiFileApiTest() {
+            const lines = [];
+            const logTest = (pass, msg) => {
+                lines.push(`${pass ? '[PASS]' : '[FAIL]'} ${msg}`);
+            };
+
+            try {
+                // 1. Create primary CSV workbook in-memory.
+                const encoder = new TextEncoder();
+                const csv1 = encoder.encode('id,val\n1,a\n2,b\n3,c\n');
+                const wb = loader.openFile(csv1, 'primary.csv');
+                workbook = wb;
+                setButtonsEnabled(true);
+                logTest(true, 'Opened primary workbook from buffer');
+
+                // 2. Attach a secondary CSV file in-memory (if File API is available).
+                const csv2 = encoder.encode('id,extra\n1,x\n4,y\n');
+                let attachOk = false;
+                if (typeof File !== 'undefined') {
+                    const blob = new Blob([csv2], { type: 'text/csv' });
+                    const file = new File([blob], 'secondary.csv', { type: 'text/csv' });
+                    await attachFileToWorkbook(file);
+                    attachOk = true;
+                    logTest(true, 'Attached secondary.csv to workbook');
+                } else {
+                    logTest(false, 'File API not available; attach test skipped');
+                }
+
+                // 3. Verify multiple datasets are visible.
+                const ds = wb.listDatasets();
+                const sheets = ds.sheets || [];
+                if (sheets.length >= 2 && attachOk) {
+                    logTest(true, `Workbook has ${sheets.length} datasets (>=2)`);
+                } else {
+                    logTest(false, `Expected at least 2 datasets after attach (got ${sheets.length})`);
+                }
+
+                // 4. Test dataset sources API.
+                try {
+                    const ptr = Module._ff_listDatasetSources(wb.handleId);
+                    const json = Module.UTF8ToString(ptr);
+                    JSON.parse(json || '{}');
+                    logTest(true, 'ff_listDatasetSources returned valid JSON');
+                } catch (e) {
+                    logTest(false, `ff_listDatasetSources failed: ${e.message}`);
+                }
+
+                // 5. Test source paths API.
+                try {
+                    const ptr = Module._ff_getWorkbookSourcePaths(wb.handleId);
+                    const json = Module.UTF8ToString(ptr);
+                    JSON.parse(json || '{}');
+                    logTest(true, 'ff_getWorkbookSourcePaths returned valid JSON');
+                } catch (e) {
+                    logTest(false, `ff_getWorkbookSourcePaths failed: ${e.message}`);
+                }
+
+                // 6. Test workbook memory stats.
+                try {
+                    const ptr = Module._ff_getWorkbookMemoryStats(wb.handleId);
+                    const json = Module.UTF8ToString(ptr);
+                    const stats = JSON.parse(json || '{}');
+                    const okBytes = typeof stats.approxTotalBytes === 'number';
+                    logTest(okBytes, 'ff_getWorkbookMemoryStats returned approxTotalBytes');
+                } catch (e) {
+                    logTest(false, `ff_getWorkbookMemoryStats failed: ${e.message}`);
+                }
+
+                // 7. Test dataset memory stats.
+                try {
+                    const ptr = Module._ff_listDatasetMemoryStats(wb.handleId);
+                    const json = Module.UTF8ToString(ptr);
+                    const stats = JSON.parse(json || '{}');
+                    const okStats = stats.datasets && Array.isArray(stats.datasets);
+                    logTest(okStats, 'ff_listDatasetMemoryStats returned datasets array');
+                } catch (e) {
+                    logTest(false, `ff_listDatasetMemoryStats failed: ${e.message}`);
+                }
+
+                // 8. Test renameDataset / detachSource on secondary.csv if attach succeeded.
+                if (attachOk) {
+                    try {
+                        const oldName = 'secondary.csv';
+                        const newName = 'secondary_renamed';
+                        const oldPtr = loader._allocateString(oldName);
+                        const newPtr = loader._allocateString(newName);
+                        const rc = Module._ff_renameDataset(wb.handleId, oldPtr, newPtr);
+                        Module._free(oldPtr);
+                        Module._free(newPtr);
+                        if (rc === 0) {
+                            const ds2 = wb.listDatasets();
+                            const names = (ds2.sheets || []).map(s => s.name);
+                            const hasNew = names.includes(newName);
+                            logTest(hasNew, 'ff_renameDataset renamed dataset to secondary_renamed');
+                        } else {
+                            const err = loader.getLastError();
+                            logTest(false, `ff_renameDataset failed: ${err || 'unknown error'}`);
+                        }
+                    } catch (e) {
+                        logTest(false, `ff_renameDataset threw: ${e.message}`);
+                    }
+
+                    try {
+                        const pathPtr = loader._allocateString('secondary.csv');
+                        const rc = Module._ff_detachSource(wb.handleId, pathPtr);
+                        Module._free(pathPtr);
+                        if (rc === 0) {
+                            const ds3 = wb.listDatasets();
+                            const names = (ds3.sheets || []).map(s => s.name);
+                            const stillHasSecondary = names.includes('secondary.csv') || names.includes('secondary_renamed');
+                            logTest(!stillHasSecondary, 'ff_detachSource removed secondary source datasets');
+                        } else {
+                            const err = loader.getLastError();
+                            logTest(false, `ff_detachSource failed: ${err || 'unknown error'}`);
+                        }
+                    } catch (e) {
+                        logTest(false, `ff_detachSource threw: ${e.message}`);
+                    }
+                }
+            } catch (err) {
+                logTest(false, `Unexpected error in multi-file test: ${err.message}`);
+            }
+
+            multiInfo.textContent = lines.join('\n');
+            log('Multi-file API test completed');
+        }
+
+        async function handleProjectManifestFile(file) {
+            try {
+                const text = await file.text();
+                const manifest = JSON.parse(text);
+                currentProjectManifest = manifest;
+                projectInfo.textContent = JSON.stringify(manifest, null, 2);
+                log(`Loaded project manifest from "${file.name}"`);
+            } catch (e) {
+                currentProjectManifest = null;
+                projectInfo.textContent = `Failed to parse manifest: ${e.message}`;
+                log(`ERROR parsing project manifest: ${e.message}`);
+            }
+            setButtonsEnabled(!!workbook);
+        }
+
+        function handleProjectFolderFiles(fileList) {
+            if (!fileList || fileList.length === 0) {
+                currentProjectFiles = null;
+                projectInfo.textContent = 'No project folder files selected.';
+                return;
+            }
+            const map = new Map();
+            for (const f of fileList) {
+                const rel = f.webkitRelativePath || f.name;
+                const norm = rel.replace(/\\/g, '/').replace(/^\.?\//, '');
+                map.set(norm, f);
+            }
+            currentProjectFiles = map;
+            log(`Project folder: ${fileList.length} file(s) selected`);
+            if (!currentProjectManifest) {
+                projectInfo.textContent =
+                    'Folder selected; load a manifest JSON to enable project open.';
+            }
+            setButtonsEnabled(!!workbook);
+        }
+
+        async function openProjectFromCurrentManifest() {
+            if (!loader) {
+                projectInfo.textContent = 'Loader not initialised.';
+                return;
+            }
+            if (!currentProjectManifest) {
+                projectInfo.textContent = 'No manifest loaded.';
+                return;
+            }
+            if (!currentProjectFiles) {
+                projectInfo.textContent = 'No project folder selected.';
+                return;
+            }
+
+            try {
+                // Close any existing workbook.
+                if (workbook) {
+                    try { workbook.close(); } catch (e) { /* ignore */ }
+                    workbook = null;
+                }
+
+                const wb = await ExcelLoaderModule.openProjectFromManifest(
+                    loader,
+                    currentProjectManifest,
+                    currentProjectFiles
+                );
+                workbook = wb;
+                setButtonsEnabled(true);
+                listDatasets();
+                projectInfo.textContent = 'Project opened successfully from manifest.';
+                log('Opened project via manifest');
+            } catch (e) {
+                projectInfo.textContent = `Failed to open project: ${e.message}`;
+                log(`ERROR opening project from manifest: ${e.message}`);
+            }
+        }
+
+        // Heuristic to reshape line-oriented XML into a table of records
+        function maybeFormatXmlResult(columns, rows) {
+            if (!columns || columns.length !== 1) return { columns, rows };
+            if (!rows || rows.length === 0) return { columns, rows };
+
+            const colName = columns[0] && columns[0].name ? columns[0].name : columns[0];
+            if (colName !== 'xml_content') return { columns, rows };
+
+            const lines = rows.map(r => (r && r.length ? String(r[0]) : ''));
+            const records = [];
+            let current = null;
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('<DATA_RECORD')) {
+                    if (current) records.push(current);
+                    current = {};
+                } else if (trimmed.startsWith('</DATA_RECORD')) {
+                    if (current) {
+                        records.push(current);
+                        current = null;
+                    }
+                } else if (current && trimmed.startsWith('<') && trimmed.includes('>')) {
+                    const endTag = trimmed.indexOf('>');
+                    const tag = trimmed.slice(1, endTag).trim();
+                    const closeSeq = `</${tag}>`;
+                    const closeIdx = trimmed.indexOf(closeSeq, endTag + 1);
+                    if (closeIdx > endTag) {
+                        const value = trimmed.slice(endTag + 1, closeIdx);
+                        if (!Object.prototype.hasOwnProperty.call(current, tag)) {
+                            current[tag] = value;
+                        }
+                    }
+                }
+            }
+            if (current) records.push(current);
+
+            if (!records.length) return { columns, rows };
+
+            const fieldSet = new Set();
+            for (const rec of records) {
+                Object.keys(rec).forEach(k => fieldSet.add(k));
+            }
+            const fieldNames = Array.from(fieldSet);
+            if (!fieldNames.length) return { columns, rows };
+
+            // Use simple string column names; the QueryResult wrapper and
+            // displayTable expect columns as plain strings.
+            const newColumns = fieldNames.slice();
+            const newRows = records.map(rec => fieldNames.map(f => rec[f] ?? null));
+
+            return { columns: newColumns, rows: newRows };
+        }
+
+        // Heuristic to reshape HTML line output into a table when the content
+        // contains a single HTML <table> element (e.g. SQL export to HTML).
+        function maybeFormatHtmlResult(columns, rows) {
+            if (!columns || columns.length !== 1) return { columns, rows };
+            if (!rows || rows.length === 0) return { columns, rows };
+
+            const colName = typeof columns[0] === 'string'
+                ? columns[0]
+                : (columns[0] && columns[0].name) ? columns[0].name : String(columns[0] ?? '');
+            if (colName !== 'html_content') return { columns, rows };
+
+            try {
+                // Reconstruct full HTML document from line-oriented rows.
+                const html = rows
+                    .map(r => (Array.isArray(r) && r.length ? String(r[0] ?? '') : ''))
+                    .join('\n');
+
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const table = doc.querySelector('table');
+                if (!table) return { columns, rows };
+
+                const trEls = Array.from(table.querySelectorAll('tr'));
+                if (!trEls.length) return { columns, rows };
+
+                // Pick the first row that looks like a real header (more than one cell).
+                let headerIndex = trEls.findIndex(tr => {
+                    const cells = tr.querySelectorAll('th,td');
+                    return cells.length > 1;
+                });
+                if (headerIndex === -1) return { columns, rows };
+
+                const headerCells = Array.from(trEls[headerIndex].querySelectorAll('th,td'));
+                const fieldNames = headerCells.map((cell, idx) => {
+                    const text = (cell.textContent || '').trim();
+                    return text || `Col${idx + 1}`;
+                });
+                if (!fieldNames.length) return { columns, rows };
+
+                const dataRows = trEls.slice(headerIndex + 1).filter(tr => tr.querySelectorAll('td').length > 0);
+                if (!dataRows.length) return { columns, rows };
+
+                const newRows = dataRows.map(tr => {
+                    const cells = Array.from(tr.querySelectorAll('td'));
+                    const row = [];
+                    for (let i = 0; i < fieldNames.length; i++) {
+                        const cell = cells[i];
+                        row.push(cell ? (cell.textContent || '').trim() : null);
+                    }
+                    return row;
+                });
+
+                return { columns: fieldNames.slice(), rows: newRows };
+            } catch (e) {
+                // If DOM parsing fails for any reason, keep original shape.
+                return { columns, rows };
+            }
+        }
+
+        function hasExplicitLimit(sql) {
+            return /\blimit\b/i.test(sql);
+        }
+
+        function buildPagedSql(baseSql, pageIndex) {
+            const offset = PAGE_SIZE * pageIndex;
+            return `${baseSql} LIMIT ${PAGE_SIZE} OFFSET ${offset}`;
+        }
+
+        // Execute SQL query (first page)
+        function executeQuery() {
+            if (!workbook) return;
+
+            const sql = sqlInput.value.trim();
+            if (!sql) {
+                log('ERROR: No SQL query');
+                return;
+            }
+
+            try {
+                currentBaseSql = sql;
+                currentPageIndex = 0;
+                isPagedQuery = !hasExplicitLimit(sql);
+
+                const effectiveSql = isPagedQuery
+                    ? buildPagedSql(currentBaseSql, currentPageIndex)
+                    : currentBaseSql;
+
+                log(`Executing: ${effectiveSql}`);
+                const result = workbook.query(effectiveSql);
+
+                // Optionally reshape XML/HTML line results into tabular form.
+                const afterXml = maybeFormatXmlResult(result.columns, result.rows);
+                const reshaped = maybeFormatHtmlResult(afterXml.columns, afterXml.rows);
+
+                resultInfo.textContent = `${reshaped.rows.length} rows, ${reshaped.columns.length} columns`;
+                if (result.viewName) {
+                    resultInfo.textContent += ` (view: ${result.viewName})`;
+                }
+
+                displayTable(reshaped.columns, reshaped.rows);
+                resultsArea.value = result.toJson();
+                log(`Query returned ${result.rowCount} rows`);
+            } catch (err) {
+                log(`ERROR executing query: ${err.message}`);
+                resultsArea.value = `Error: ${err.message}`;
+                resultTable.innerHTML = '';
+            }
+        }
+
+        function executePagedQuery(direction) {
+            if (!workbook || !isPagedQuery || !currentBaseSql) {
+                log('Paging is only available for queries without an explicit LIMIT.');
+                return;
+            }
+
+            const nextIndex = currentPageIndex + direction;
+            if (nextIndex < 0) {
+                return;
+            }
+            currentPageIndex = nextIndex;
+
+            try {
+                const effectiveSql = buildPagedSql(currentBaseSql, currentPageIndex);
+                log(`Executing page ${currentPageIndex + 1}: ${effectiveSql}`);
+                const result = workbook.query(effectiveSql);
+
+                const afterXml = maybeFormatXmlResult(result.columns, result.rows);
+                const reshaped = maybeFormatHtmlResult(afterXml.columns, afterXml.rows);
+
+                resultInfo.textContent = `${reshaped.rows.length} rows, ${reshaped.columns.length} columns (page ${currentPageIndex + 1})`;
+                displayTable(reshaped.columns, reshaped.rows);
+                resultsArea.value = result.toJson();
+            } catch (err) {
+                log(`ERROR executing paged query: ${err.message}`);
+                resultsArea.value = `Error: ${err.message}`;
+                resultTable.innerHTML = '';
+            }
+        }
+
+        // Profile dataset
+        function profileDataset() {
+            if (!workbook || !currentDataset) return;
+
+            try {
+                log(`Profiling dataset: ${currentDataset}`);
+                const result = workbook.profileDataset(currentDataset);
+                resultsArea.value = JSON.stringify(result, null, 2);
+
+                // Try to display as table
+                if (result.columns && result.rows) {
+                    displayTable(result.columns, result.rows);
+                    resultInfo.textContent = `Profile: ${result.rows.length} columns analyzed`;
+                }
+                log('Profile completed');
+            } catch (err) {
+                log(`ERROR profiling: ${err.message}`);
+            }
+        }
+
+        // Run quality rules
+        function runQualityRules() {
+            if (!workbook || !currentDataset) return;
+
+            const sampleRules = [
+                { id: 'not_null', description: 'Values should not be null', sqlCondition: '1=1' }
+            ];
+
+            try {
+                log(`Running quality rules on: ${currentDataset}`);
+                const result = workbook.evaluateQualityRules(currentDataset, sampleRules);
+                resultsArea.value = JSON.stringify(result, null, 2);
+                log('Quality rules evaluated');
+            } catch (err) {
+                log(`ERROR running quality rules: ${err.message}`);
+            }
+        }
+
+        // Automated tests
+        async function runTests() {
+            testResults.innerHTML = '<span class="test-info">Running tests...</span>\n';
+
+            const results = { pass: 0, fail: 0 };
+
+            function testLog(pass, msg) {
+                const cls = pass ? 'test-pass' : 'test-fail';
+                const icon = pass ? '[PASS]' : '[FAIL]';
+                testResults.innerHTML += `<span class="${cls}">${icon}</span> ${msg}\n`;
+                if (pass) results.pass++; else results.fail++;
+            }
+
+            try {
+                // Test 1: Module loaded
+                testLog(loader !== null, 'Module initialized');
+
+                // Test 2: Create sample CSV data
+                const csvData = new TextEncoder().encode('name,age,city\nAlice,30,NYC\nBob,25,LA\nCarol,35,Chicago');
+                const wb = loader.openFile(csvData, 'test.csv');
+                testLog(wb !== null, 'Open CSV from buffer');
+
+                // Test 3: List datasets
+                const datasets = wb.listDatasets();
+                testLog(datasets.sheets && datasets.sheets.length > 0, 'List datasets');
+
+                // Test 4: Execute query
+                const qr = wb.query('SELECT * FROM "test.csv"');
+                testLog(qr.rowCount === 3, `Query returns 3 rows (got ${qr.rowCount})`);
+                testLog(qr.columnCount === 3, `Query returns 3 columns (got ${qr.columnCount})`);
+
+                // Test 5: Query with LIMIT
+                const qr2 = wb.query('SELECT * FROM "test.csv" LIMIT 1');
+                testLog(qr2.rowCount === 1, 'LIMIT works');
+
+                // Test 6: Query with WHERE
+                const qr3 = wb.query('SELECT * FROM "test.csv" WHERE age > 28');
+                testLog(qr3.rowCount === 2, `WHERE filter works (got ${qr3.rowCount} rows)`);
+
+                // Test 7: COUNT aggregate
+                const qr4 = wb.query('SELECT COUNT(*) as cnt FROM "test.csv"');
+                testLog(qr4.rows[0][0] === 3, 'COUNT aggregate works');
+
+                // Test 8: toObjects conversion
+                const objs = qr.toObjects();
+                testLog(objs[0].name === 'Alice', 'toObjects conversion');
+
+                // Test 9: DataFrame
+                const df = new ExcelLoaderModule.DataFrame(qr);
+                testLog(df.length === 3, 'DataFrame creation');
+                testLog(df.columns.includes('name'), 'DataFrame columns');
+
+                // Test 10: DataFrame filter
+                const filtered = df.filter(row => row.age > 28);
+                testLog(filtered.length === 2, 'DataFrame filter');
+
+                // Test 11: Data quality profiling
+                const profile = wb.profileDataset('test.csv');
+                const profCols = profile && Array.isArray(profile.columns) ? profile.columns : [];
+                const hasNameCol = profCols.some(c => c.name === 'name');
+                const hasAgeCol = profCols.some(c => c.name === 'age');
+                testLog(hasNameCol && hasAgeCol, 'profileDataset returns column metrics');
+
+                // Test 12: Data quality rules
+                const dqRules = [
+                    {
+                        id: 'age_non_negative',
+                        description: 'Age must be >= 0',
+                        sqlCondition: 'CAST(age AS INTEGER) >= 0'
+                    },
+                    {
+                        id: 'age_max_30',
+                        description: 'Age must be <= 30',
+                        sqlCondition: 'CAST(age AS INTEGER) <= 30'
+                    }
+                ];
+
+                const summary = wb.evaluateQualityRules('test.csv', dqRules);
+                const ruleSummaries = summary && Array.isArray(summary.rules) ? summary.rules : [];
+                testLog(
+                    ruleSummaries.length === dqRules.length,
+                    'evaluateQualityRules returns one summary per rule'
+                );
+
+                const maxRule = ruleSummaries.find(r => r.id === 'age_max_30');
+                if (maxRule) {
+                    const failed = Number(maxRule.failed);
+                    testLog(failed > 0, 'age_max_30 rule has failing rows');
+
+                    if (maxRule.sampleViewName) {
+                        const viewName = maxRule.sampleViewName;
+                        const failRes = wb.query(`SELECT COUNT(*) AS cnt FROM "${viewName}"`);
+                        const failObjs = failRes.toObjects();
+                        const cnt = Number(failObjs[0] && failObjs[0].cnt);
+                        testLog(
+                            cnt === failed,
+                            'Failure view row count matches failed_count'
+                        );
+                    }
+                }
+
+                // Test 13: Close workbook
+                wb.close();
+                testLog(wb.isClosed, 'Close workbook');
+
+                // Test 14: Error on closed workbook
+                let errorThrown = false;
+                try {
+                    wb.query('SELECT 1');
+                } catch (e) {
+                    errorThrown = true;
+                }
+                testLog(errorThrown, 'Error thrown on closed workbook');
+
+            } catch (err) {
+                testLog(false, `Unexpected error: ${err.message}`);
+            }
+
+            testResults.innerHTML += `\n<strong>Summary: ${results.pass} passed, ${results.fail} failed</strong>`;
+        }
+
+        // Event listeners
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleFiles(e.dataTransfer.files);
+            }
+        });
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) {
+                handleFiles(fileInput.files);
+            }
+        });
+
+        btnAttachFile.addEventListener('click', () => {
+            attachFileInput.click();
+        });
+
+        attachFileInput.addEventListener('change', async () => {
+            if (attachFileInput.files.length > 0) {
+                for (const file of attachFileInput.files) {
+                    await attachFileToWorkbook(file);
+                }
+            }
+        });
+
+        btnShowSources.addEventListener('click', showDatasetSources);
+        btnShowPaths.addEventListener('click', showSourcePaths);
+        btnShowMemory.addEventListener('click', showMemoryStats);
+        btnRenameDataset.addEventListener('click', renameDataset);
+        btnDetachSource.addEventListener('click', detachSource);
+        btnRunMultiTests.addEventListener('click', runMultiFileApiTest);
+
+        projectManifestInput.addEventListener('change', () => {
+            if (projectManifestInput.files && projectManifestInput.files[0]) {
+                handleProjectManifestFile(projectManifestInput.files[0]);
+            }
+        });
+
+        projectFolderInput.addEventListener('change', () => {
+            if (projectFolderInput.files && projectFolderInput.files.length > 0) {
+                handleProjectFolderFiles(projectFolderInput.files);
+            }
+        });
+
+        btnOpenProject.addEventListener('click', () => {
+            openProjectFromCurrentManifest();
+        });
+
+        btnListDatasets.addEventListener('click', listDatasets);
+        btnQuery.addEventListener('click', executeQuery);
+        btnProfile.addEventListener('click', profileDataset);
+        btnQuality.addEventListener('click', runQualityRules);
+        btnRunTests.addEventListener('click', runTests);
+
+        // Keyboard shortcuts
+        sqlInput.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                executeQuery();
+            }
+        });
+
+        // Initialize on load
+        window.addEventListener('load', () => {
+            // Show version and current timestamp
+            if (buildInfo) {
+                const ts = new Date().toISOString();
+                buildInfo.textContent = `excel_loader_wasm v${APP_VERSION} | ${ts}`;
+            }
+
+            // Check if running with a WASM module
+            if (typeof Module !== 'undefined') {
+                initModule();
+            } else {
+                setStatus('error', 'WASM module not found. Make sure excel_loader_wasm.js is in the same directory.');
+                log('To use this page, you need to build the WASM module first:');
+                log('  ./scripts/build_wasm.sh');
+                log('Then open excel_loader.html from the build_wasm/ directory so excel_loader_wasm.js is available.');
+            }
+        });
+    </script>
+</body>
+</html>
