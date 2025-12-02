@@ -20,7 +20,7 @@
 - WASM/JS‑API: `ExcelLoaderEngine`, `ExcelLoaderModule`, `Workbook`, `QueryResult`,
   `DataFrame`, helper `openProjectFromManifest`.
 
-## Где начинать
+## С чего  начать
 
 - Краткое описание проекта (EN): `README.md`
 - Подробное описание API WASM/JS и CLI  на русском: `api_desc.md`
