@@ -1,4 +1,4 @@
-# excel_loader – SQL по табличным файлам (CLI и WASM)
+# wasm-sqlite-database  – SQL по табличным файлам (  WASM)
 
 `excel_loader` — это C++17‑движок, который позволяет выполнять SQL‑запросы к
 табличным файлам (CSV, Excel, Parquet, SQLite и др.) как к виртуальным
