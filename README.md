@@ -1,0 +1,26 @@
+# excel_loader – SQL по табличным файлам (CLI и WASM)
+
+`excel_loader` — это C++17‑движок, который позволяет выполнять SQL‑запросы к
+табличным файлам (CSV, Excel, Parquet, SQLite и др.) как к виртуальным
+таблицам. Один и тот же core используется в нативном CLI и в WebAssembly для
+браузера и Node.js.
+
+## Основные возможности
+
+- Поддержка множества форматов: CSV/TSV, Excel (XLSX/XLSB/XLS/ODS),
+  SQLite/DBF/MDB/ACCDB, Parquet, DuckDB, JSON/JSONL, XML, HTML, TXT.
+- Многофайловые workbook: открытие одного «проекта» из нескольких файлов,
+  attach/detach источников, переименование датасетов.
+- Метаданные источников: для каждого датасета известны файл, лист/диапазон/таблица
+  и техническое SQL‑имя.
+- Приблизительная статистика по памяти для всего workbook и для отдельных
+  датасетов (для диагностики и LRU‑алгоритмов).
+- Проектные манифесты (ADR 0019): JSON‑описание набора файлов и переименований,
+  пригодное для повторного открытия в CLI и в браузере.
+- WASM/JS‑API: `ExcelLoaderEngine`, `ExcelLoaderModule`, `Workbook`, `QueryResult`,
+  `DataFrame`, helper `openProjectFromManifest`.
+
+## Где начинать
+
+- Краткое описание проекта (EN): `README.md`
+- Подробное описание API WASM/JS и CLI  на русском: `api_desc.md`
