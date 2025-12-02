@@ -22,17 +22,6 @@
 
 ### 1.1 C ABI (WASM)
 
-```c
-// Прикрепить дополнительный файл к существующему workbook.
-// Возвращает 0 при успехе, ненулевое значение при ошибке.
-FF_EXPORT int ff_attachFile(FfHandleId handle,
-                            const uint8_t* data,
-                            uint32_t size,
-                            const char* fileName,
-                            int format,      // enum SeFileFormat; 0 = Auto
-                            char delimiter,  // например ',' или '\t'
-                            int hasHeaderRow);
-```
 
 **Пример (низкоуровневый JS):**
 
@@ -89,14 +78,7 @@ if (!ok) {
 }
 ```
 
-### 1.3 CLI
 
-```bash
-excel_loader_cli \
-  --file data/orders_2024.csv \
-  --attach-file data/customers.csv \
-  --list-datasets
-```
 
 ---
 
@@ -110,13 +92,6 @@ excel_loader_cli \
 
 ### 2.1 C ABI / WASM
 
-```c
-// JSON: {"datasets":[{technicalName,sourceFilePath,sourceObjectName},...]}
-FF_EXPORT const char* ff_listDatasetSources(FfHandleId handle);
-
-// JSON: {"paths":["/path/to/file1","/path/to/file2",...]}
-FF_EXPORT const char* ff_getWorkbookSourcePaths(FfHandleId handle);
-```
 
 **Пример (низкоуровневый JS):**
 
@@ -146,12 +121,6 @@ const { paths } = await engine.getWorkbookSourcePaths(handleId);
 
 ### 3.1 Переименование датасета
 
-```c
-// Возвращает 0 при успехе, ненулевое значение при ошибке.
-FF_EXPORT int ff_renameDataset(FfHandleId handle,
-                               const char* oldName,
-                               const char* newName);
-```
 
 **Пример (низкоуровневый JS):**
 
@@ -170,22 +139,10 @@ if (rc !== 0) throw new Error(await engine.getLastError());
 const ok = await engine.renameDataset(handleId, 'orders_2024.csv', 'orders');
 ```
 
-**CLI:**
 
-```bash
-excel_loader_cli \
-  --file data/orders_2024.csv \
-  --rename-dataset "orders_2024.csv=orders" \
-  --list-datasets
-```
 
 ### 3.2 Отключение источника
 
-```c
-// Возвращает 0 при успехе, ненулевое значение при ошибке.
-FF_EXPORT int ff_detachSource(FfHandleId handle,
-                              const char* sourceFilePath);
-```
 
 **Высокоуровневый JS:**
 
@@ -211,18 +168,6 @@ excel_loader_cli \
 
 ### 4.1 C ABI / WASM
 
-```c
-// JSON:
-// {"approxDbBytes":...,
-//  "approxFileBufferBytes":...,
-//  "approxTotalBytes":...,
-//  "sources":[{sourceFilePath,sourceObjectName,approxBytes},...]}
-FF_EXPORT const char* ff_getWorkbookMemoryStats(FfHandleId handle);
-
-// JSON:
-// {"datasets":[{technicalName,sourceFilePath,sourceObjectName,approxBytes},...]}
-FF_EXPORT const char* ff_listDatasetMemoryStats(FfHandleId handle);
-```
 
 **Пример (JS):**
 
@@ -246,13 +191,6 @@ const datasetStats = await engine.listDatasetMemoryStats(handleId);
 // { datasets: [ { technicalName, sourceFilePath, sourceObjectName, approxBytes }, ... ] }
 ```
 
-### 4.3 CLI
-
-```bash
-excel_loader_cli \
-  --file data/sample.csv \
-  --print-memory-stats
-```
 
 ---
 
@@ -260,14 +198,8 @@ excel_loader_cli \
 
 `SeOpenOptions` теперь включает:
 
-```c++
-enum class SeExcelObjectKind {
-    Any,
-    Sheet,
-    NamedRange,
-    Table
-};
 
+```
 struct SeOpenOptions {
     // ...
     SeExcelObjectKind excelObjectKind = SeExcelObjectKind::Any;
@@ -275,7 +207,6 @@ struct SeOpenOptions {
 };
 ```
 
-В этом релизе:
 
 - Фильтры применяются к **листам** в XLSX/XLS/ODS.
 - `excelObjectKind = Sheet` или `Any` работают ожидаемо.
@@ -283,14 +214,7 @@ struct SeOpenOptions {
 
 **Пример (C++ / native или WASM):**
 
-```c++
-SeOpenOptions opts;
-opts.fileName = "workbook.xlsx";
-opts.excelObjectKind = SeExcelObjectKind::Sheet;
-opts.excelObjectNames = { "Sheet1", "Sheet2" };
 
-SeWorkbookHandle handle = se_openWorkbook(bytes, size, opts);
-```
 
 ---
 
@@ -316,7 +240,7 @@ python3 -m http.server 8080
 
 ---
 
-## 7. Проектные манифесты (ADR 0019)
+## 7. Проектные манифесты 
 
 Этот релиз добавляет поддержку **проектных манифестов** – небольших JSON‑файлов,
 описывающих многофайловый проект (folder project). Манифест позволяет задать:
@@ -373,11 +297,6 @@ python3 -m http.server 8080
 Многофайловый проект можно открыть по манифесту вместо перечисления множества
 опций `--attach-file`:
 
-```bash
-excel_loader_cli \
-  --project-config path/to/project.json \
-  --list-datasets
-```
 
 Поведение:
 
@@ -396,13 +315,7 @@ excel_loader_cli \
 Можно также **экспортировать** манифест, описывающий текущий workbook, с учётом
 подключённых файлов и переименований:
 
-```bash
-excel_loader_cli \
-  --file data/sample.csv \
-  --attach-file data/extra.csv \
-  --rename-dataset "sample.csv=orders" \
-  --export-project-config project.json
-```
+
 
 Для этого используется `se_exportProjectManifest`, который создаёт JSON‑манифест:
 
@@ -414,13 +327,6 @@ excel_loader_cli \
 
 ### 7.4 WASM / JS – экспорт манифеста
 
-WASM C ABI предоставляет:
-
-```c
-// Возвращает строку JSON‑манифеста при успехе; "{}" при ошибке.
-FF_EXPORT const char* ff_exportProjectManifest(FfHandleId handleId,
-                                               const char* projectName);
-```
 
 Высокоуровневая JS‑обёртка:
 
@@ -485,27 +391,7 @@ Helper:
 Хотя этот README описывает в первую очередь WASM‑сборку, базовый C++‑API тоже
 предоставляет helper для экспорта манифеста:
 
-```c++
-#include "se_api.hxx"
 
-void export_project_example(SeWorkbookHandle handle)
-{
-    SeProjectManifestExportOptions opts;
-    opts.projectName = "my_project";
-    opts.includeRenames = true;
-    opts.projectRoot = "/absolute/path/to/project/root";
-
-    std::string json;
-    if (!se_exportProjectManifest(handle, opts, json)) {
-        const char* err = se_getLastError();
-        // Обработка ошибки (логирование или исключение)
-        return;
-    }
-
-    // json now contains a manifest as described above.
-    // You can write it to disk as project.json for later use.
-}
-```
 
 Полученный JSON‑манифест можно использовать в:
 
